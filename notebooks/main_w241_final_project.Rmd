@@ -1,0 +1,70 @@
+---
+title: "W241 Final Project - Main Script"
+author: "Fisher Kim, Kai Ying, Lucas Schroyer, Peter YH Kim"
+date: '2022-04-03'
+output:
+  pdf_document: default
+  word_document: default
+---
+
+## Introduction
+
+This is the markdown script for a final project for the UC Berkeley School of Information - W241.
+
+
+## Configurations and Load Packages
+```{r global options, include = FALSE}
+knitr::opts_chunk$set(include = FALSE, message = FALSE, warning = FALSE )
+
+knitr::knit_engines$set(problem_description = function(options) {
+  code <- paste(options$code, collapse = "\n")
+})
+
+```
+
+```{r load packages, message = FALSE}
+library(data.table)
+
+if (!require("lmtest")) install.packages("lmtest")
+if (!require("sandwich")) install.packages("sandwich")
+if (!require("patchwork")) install.packages("patchwork")
+if (!require("stargazer")) install.packages("stargazer")
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("janitor")) install.packages("janitor")
+if (!require("AER")) install.packages("AER")
+
+
+library(sandwich)
+library(lmtest)
+
+library(AER) 
+
+library(ggplot2) 
+library(patchwork)
+
+library(tidyverse)
+library(janitor)
+
+
+```
+## Theory and Background 
+
+
+## Load and Clean Data
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 3, 2022_07.55.csv')
+
+# Transform Column Names
+d <- janitor::clean_names(d)
+
+# Create Column Dictionary
+d_dict <- d[1:1,]
+d <- d[2:nrow(d),]
+
+# Drop unnecessary columns
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
