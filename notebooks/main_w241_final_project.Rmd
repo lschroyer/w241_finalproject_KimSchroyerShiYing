@@ -55,16 +55,37 @@ library(janitor)
 You can also embed plots, for example:
 
 ```{r pressure, echo=FALSE}
-d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 3, 2022_07.55.csv')
+d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 3, 2022_20.19.csv')
 
 # Transform Column Names
 d <- janitor::clean_names(d)
 
 # Create Column Dictionary
 d_dict <- d[1:1,]
-d <- d[2:nrow(d),]
+d <- d[3:nrow(d),] #if exporting a csv from Qualtrics, use third row. Excel is 2
 
 # Drop unnecessary columns
+d <- d[, alien_treatment_bool := ifelse(alien_control == "", 0, 1)]
+d <- d[, recyc_treatment_bool := ifelse(recycle_control == "", 0, 1)]
+d <- d[, social_treatment_bool := ifelse(control_social == "", 0, 1)]
+
+d_2 <- d %>% 
+  select(alien_treatment_bool, recyc_treatment_bool, social_treatment_bool, sc1, sc2, sc3) %>%
+  gather(key = "treatment_question", value = "treatment_bool", alien_treatment_bool, recyc_treatment_bool, social_treatment_bool) %>% 
+  gather(key = "quiz_question", value = "quiz_correct_num", sc1, sc2, sc3) %>% 
+  mutate(quiz_perc_correct = as.double(quiz_correct_num)/4) %>% 
+  as.data.table()
+
+
+d_2 %>% head()
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+```{r regression}
+model_basic <- d_2[, lm(quiz_perc_correct ~ treatment_bool)]
+
+summary(model_basic)
+
+
+```
