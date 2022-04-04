@@ -43,6 +43,7 @@ library(ggplot2)
 library(patchwork)
 
 library(tidyverse)
+
 library(janitor)
 
 
@@ -55,7 +56,7 @@ library(janitor)
 You can also embed plots, for example:
 
 ```{r pressure, echo=FALSE}
-d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 3, 2022_20.19.csv')
+d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 4, 2022_12.40.csv')
 
 # Transform Column Names
 d <- janitor::clean_names(d)
@@ -64,10 +65,83 @@ d <- janitor::clean_names(d)
 d_dict <- d[1:1,]
 d <- d[3:nrow(d),] #if exporting a csv from Qualtrics, use third row. Excel is 2
 
+# Drop people that opted out before randomization
+d <- d %>% filter(nda %like% "Yes")
+
+# referral counts
+d %>% count(referral_person) 
+
 # Drop unnecessary columns
+d <- d %>% 
+  select(-ip_address, -progress, -recipient_first_name, -recipient_last_name, 
+         -location_latitude, -location_longitude, -distribution_channel, -notice,
+         -time_control_alien_click_count, -facts_aliens, -info_recycling, -facts_social) 
+  
+# Transform columns:
 d <- d[, alien_treatment_bool := ifelse(alien_control == "", 0, 1)]
 d <- d[, recyc_treatment_bool := ifelse(recycle_control == "", 0, 1)]
 d <- d[, social_treatment_bool := ifelse(control_social == "", 0, 1)]
+
+d <- d %>% rename(alien_quiz_for_1 = alien_quiz_q1, 
+                  alien_quiz_for_2 = alien_quiz_q2,
+                  alien_quiz_against_1 = alien_quiz_q4,
+                  alien_quiz_against_2 = alien_quiz_q3,
+                  recycle_quiz_for_1 = recycle_quiz_q2,
+                  recycle_quiz_for_2 = recycle_quiz_q4,
+                  recycle_quiz_against_1 = recycle_quiz_q1,
+                  recycle_quiz_against_2 = recycle_quiz_q3,
+                  social_quiz_for_1 = social_quiz_q1, 
+                  social_quiz_for_2 = social_quiz_q2, 
+                  social_quiz_against_1 = social_quiz_q3, 
+                  social_quiz_against_2 = social_quiz_q4)
+
+quiz_results_raw <- d %>% select(contains("quiz")) 
+
+quiz_answer_key_alien <- tibble(question = 
+                            c("alien_quiz_for_1", "alien_quiz_for_2", 
+                              "alien_quiz_against_1" ,"alien_quiz_against_2"), 
+                          answer = 
+                            c("10,000", "Only 19 out of the 144 reports",
+                              "Project Aquatone", "National Geographic"))
+
+quiz_answer_key_recycle <- tibble(question = 
+                            c("recycle_quiz_for_1", "recycle_quiz_for_2", 
+                              "recycle_quiz_against_1" ,"recycle_quiz_against_2"), 
+                          answer = 
+                            c("20 million cars off of U.S. roads and highways", 
+                              "Recycling and composting, but not waste management",
+                              "2-3","90%"))
+
+quiz_answer_key_social <- tibble(question = 
+                            c("recycle_quiz_for_1", "recycle_quiz_for_2", 
+                              "recycle_quiz_against_1" ,"recycle_quiz_against_2"), 
+                          answer = 
+                            c("FamilyOK", 
+                              "feel more connected to their friends",
+                              "six", "Because of teens’ impulsive natures"))
+
+quiz_answer_key <- quiz_answer_key_alien %>% 
+  rbind(quiz_answer_key_recycle) %>% 
+  rbind(quiz_answer_key_social)
+
+
+quiz_score <- function(col){
+  col_name <- names(col)
+  
+  question_answer <- quiz_answer_key %>% 
+    filter(question == col_name) %>% 
+    select(answer) %>% as.character()
+  
+  col_correct <- d[[col_name]] == question_answer
+  
+  d <- d %>% 
+    mutate(paste0(col_name,"_correct") = col_correct)
+}
+
+d_graded <- quiz_results_raw %>% 
+  select(alien_quiz_against_2) %>% 
+  quiz_score()
+ #apply map next
 
 d_2 <- d %>% 
   select(alien_treatment_bool, recyc_treatment_bool, social_treatment_bool, sc1, sc2, sc3) %>%
@@ -78,14 +152,21 @@ d_2 <- d %>%
 
 
 d_2 %>% head()
+
+
 ```
 
 
 
-```{r regression}
+```{r regression basic}
 model_basic <- d_2[, lm(quiz_perc_correct ~ treatment_bool)]
 
 summary(model_basic)
+
+
+```
+
+``` {r regression with covariates}
 
 
 ```
