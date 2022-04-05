@@ -55,7 +55,7 @@ library(janitor)
 
 You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
+```{r load_data, echo=FALSE}
 d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 4, 2022_12.40.csv')
 
 # Transform Column Names
@@ -95,6 +95,8 @@ d <- d %>% rename(alien_quiz_for_1 = alien_quiz_q1,
                   social_quiz_against_1 = social_quiz_q3, 
                   social_quiz_against_2 = social_quiz_q4)
 
+
+# Calculate what questions (for or against) each participant got right
 quiz_results_raw <- d %>% select(contains("quiz")) 
 
 quiz_answer_key_alien <- tibble(question = 
@@ -113,45 +115,63 @@ quiz_answer_key_recycle <- tibble(question =
                               "2-3","90%"))
 
 quiz_answer_key_social <- tibble(question = 
-                            c("recycle_quiz_for_1", "recycle_quiz_for_2", 
-                              "recycle_quiz_against_1" ,"recycle_quiz_against_2"), 
+                            c("social_quiz_for_1", "social_quiz_for_2", 
+                              "social_quiz_against_1" ,"social_quiz_against_2"), 
                           answer = 
                             c("FamilyOK", 
                               "feel more connected to their friends",
                               "six", "Because of teens’ impulsive natures"))
 
 quiz_answer_key <- quiz_answer_key_alien %>% 
-  rbind(quiz_answer_key_recycle) %>% 
-  rbind(quiz_answer_key_social)
+  bind_rows(quiz_answer_key_recycle) %>% 
+  bind_rows(quiz_answer_key_social)
 
 
-quiz_score <- function(col){
-  col_name <- names(col)
-  
+quiz_score <- function(col_name){
+
   question_answer <- quiz_answer_key %>% 
     filter(question == col_name) %>% 
-    select(answer) %>% as.character()
+    select(answer) %>% 
+    as.character()
   
-  col_correct <- d[[col_name]] == question_answer
+  col_correct <- as.integer(d[[col_name]] == question_answer)
   
-  d <- d %>% 
-    mutate(paste0(col_name,"_correct") = col_correct)
-}
+  return(col_correct)
+  }
 
 d_graded <- quiz_results_raw %>% 
-  select(alien_quiz_against_2) %>% 
-  quiz_score()
- #apply map next
+  names() %>% 
+  map_dfc(quiz_score) 
 
-d_2 <- d %>% 
-  select(alien_treatment_bool, recyc_treatment_bool, social_treatment_bool, sc1, sc2, sc3) %>%
-  gather(key = "treatment_question", value = "treatment_bool", alien_treatment_bool, recyc_treatment_bool, social_treatment_bool) %>% 
+names(d_graded) <- paste0(quiz_results_raw %>% 
+  names(), "_correct")
+
+d_2 <- d %>% bind_cols(d_graded)
+
+d_2 <- d_2 %>% 
+  mutate(alien_quiz_for_correct = (alien_quiz_for_1_correct + alien_quiz_for_2_correct)/2,
+         recycle_quiz_for_correct = (recycle_quiz_for_1_correct + recycle_quiz_for_2_correct)/2,
+         social_quiz_for_correct = (social_quiz_for_1_correct + social_quiz_for_2_correct)/2,
+         alien_quiz_against_correct = (alien_quiz_against_1_correct + alien_quiz_against_2_correct)/2,
+         recycle_quiz_against_correct = (recycle_quiz_against_1_correct + recycle_quiz_against_2_correct)/2,
+         social_quiz_against_correct = (social_quiz_against_1_correct + social_quiz_against_2_correct)/2)
+
+d_3 <- d_2 %>% 
+  # select(alien_treatment_bool, recyc_treatment_bool, social_treatment_bool, sc1, sc2, sc3) %>%
+  gather(key = "treatment_question", value = "treatment_bool", 
+         alien_treatment_bool, recyc_treatment_bool, social_treatment_bool) %>% 
+  gather(key = "treatment_for_question", value = "treatment_for_bool", 
+         alien_quiz_for_correct, recycle_quiz_for_correct, social_quiz_for_correct) %>% 
+  gather(key = "treatment_against_question", value = "treatment_against_bool", 
+         alien_quiz_against_correct, recycle_quiz_against_correct, social_quiz_against_correct) %>% 
   gather(key = "quiz_question", value = "quiz_correct_num", sc1, sc2, sc3) %>% 
   mutate(quiz_perc_correct = as.double(quiz_correct_num)/4) %>% 
   as.data.table()
 
 
-d_2 %>% head()
+
+
+d_3 %>% glimpse()
 
 
 ```
@@ -159,10 +179,33 @@ d_2 %>% head()
 
 
 ```{r regression basic}
-model_basic <- d_2[, lm(quiz_perc_correct ~ treatment_bool)]
+
+
+model_basic <- d_3 %>% 
+  select(response_id, quiz_perc_correct, treatment_question, treatment_bool) %>% 
+  unique() %>% 
+  arrange(response_id) %>% 
+  lm(quiz_perc_correct ~ treatment_bool, data = .)
+
+# TODO - QC why the gathers result in two copies of each with different scores
+#          response_id quiz_perc_correct    treatment_question treatment_bool
+# 1: R_0JoNfdq3IWhf0LT               1.0  alien_treatment_bool              1
+# 2: R_0JoNfdq3IWhf0LT               1.0  recyc_treatment_bool              0
+# 3: R_0JoNfdq3IWhf0LT               1.0 social_treatment_bool              1
+# 4: R_0JoNfdq3IWhf0LT               0.5  alien_treatment_bool              1
+# 5: R_0JoNfdq3IWhf0LT               0.5  recyc_treatment_bool              0
+# 6: R_0JoNfdq3IWhf0LT               0.5 social_treatment_bool              1
+
 
 summary(model_basic)
 
+# TODO - Update treatment_bool as this isn't correct.
+model_for_basic <- d_3 %>% 
+  select(response_id, quiz_for_correct, treatment_bool) %>% 
+  unique() %>% 
+  lm(quiz_for_correct ~ treatment_bool, data = .)
+
+summary(model_for_basic)
 
 ```
 
