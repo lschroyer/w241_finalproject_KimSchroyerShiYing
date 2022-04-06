@@ -53,10 +53,9 @@ library(janitor)
 
 ## Load and Clean Data
 
-You can also embed plots, for example:
 
 ```{r load_data, echo=FALSE}
-d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 4, 2022_12.40.csv')
+d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 5, 2022_08.54.csv')
 
 # Transform Column Names
 d <- janitor::clean_names(d)
@@ -78,9 +77,9 @@ d <- d %>%
          -time_control_alien_click_count, -facts_aliens, -info_recycling, -facts_social) 
   
 # Transform columns:
-d <- d[, alien_treatment_bool := ifelse(alien_control == "", 0, 1)]
-d <- d[, recyc_treatment_bool := ifelse(recycle_control == "", 0, 1)]
-d <- d[, social_treatment_bool := ifelse(control_social == "", 0, 1)]
+d <- d[, alien_treatment_bool := ifelse(alien_treatment == "", 0, 1)]
+d <- d[, recyc_treatment_bool := ifelse(recycle_treatment == "", 0, 1)]
+d <- d[, social_treatment_bool := ifelse(treatment_social == "", 0, 1)]
 
 d <- d %>% rename(alien_quiz_for_1 = alien_quiz_q1, 
                   alien_quiz_for_2 = alien_quiz_q2,
@@ -146,33 +145,112 @@ d_graded <- quiz_results_raw %>%
 names(d_graded) <- paste0(quiz_results_raw %>% 
   names(), "_correct")
 
-d_2 <- d %>% bind_cols(d_graded)
+d_graded_2 <- d %>% select(response_id) %>% bind_cols(d_graded)
 
-d_2 <- d_2 %>% 
+d_graded_2 <- d_graded_2 %>% 
   mutate(alien_quiz_for_correct = (alien_quiz_for_1_correct + alien_quiz_for_2_correct)/2,
          recycle_quiz_for_correct = (recycle_quiz_for_1_correct + recycle_quiz_for_2_correct)/2,
          social_quiz_for_correct = (social_quiz_for_1_correct + social_quiz_for_2_correct)/2,
          alien_quiz_against_correct = (alien_quiz_against_1_correct + alien_quiz_against_2_correct)/2,
          recycle_quiz_against_correct = (recycle_quiz_against_1_correct + recycle_quiz_against_2_correct)/2,
-         social_quiz_against_correct = (social_quiz_against_1_correct + social_quiz_against_2_correct)/2)
+         social_quiz_against_correct = (social_quiz_against_1_correct + social_quiz_against_2_correct)/2,
+         quiz_for_correct = (alien_quiz_for_correct + recycle_quiz_for_correct + social_quiz_for_correct)/3,
+         quiz_against_correct = (alien_quiz_against_correct + recycle_quiz_against_correct + social_quiz_against_correct)/3)
 
-d_3 <- d_2 %>% 
+#Transpose so alien, recycle, and social media each have their own rows
+d_2 <- d %>% 
   # select(alien_treatment_bool, recyc_treatment_bool, social_treatment_bool, sc1, sc2, sc3) %>%
   gather(key = "treatment_question", value = "treatment_bool", 
          alien_treatment_bool, recyc_treatment_bool, social_treatment_bool) %>% 
-  gather(key = "treatment_for_question", value = "treatment_for_bool", 
-         alien_quiz_for_correct, recycle_quiz_for_correct, social_quiz_for_correct) %>% 
-  gather(key = "treatment_against_question", value = "treatment_against_bool", 
-         alien_quiz_against_correct, recycle_quiz_against_correct, social_quiz_against_correct) %>% 
-  gather(key = "quiz_question", value = "quiz_correct_num", sc1, sc2, sc3) %>% 
-  mutate(quiz_perc_correct = as.double(quiz_correct_num)/4) %>% 
+  mutate(sc1 = as.numeric(sc1),
+         sc2 = as.numeric(sc2),
+         sc3 = as.numeric(sc3)) %>% 
+  mutate(sc1 = if_else(`treatment_question` == "alien_treatment_bool", `sc1`, 0),
+         sc2 = if_else(`treatment_question` == "recyc_treatment_bool", `sc2`, 0),
+         sc3 = if_else(`treatment_question` == "social_treatment_bool", `sc3`, 0),
+         quiz_correct_num = sc1 + sc2 + sc3,
+         quiz_perc_correct = as.double(quiz_correct_num)/4) %>% 
+  left_join(d_graded_2, by = "response_id") %>% 
+  arrange(response_id) %>% 
+  mutate(alien_question = ifelse(treatment_question %like% 'alien', 1, 0),
+         recycle_question = ifelse(treatment_question %like% 'recy', 1, 0),
+         social_question = ifelse(treatment_question %like% 'social', 1, 0)) %>% 
   as.data.table()
 
+# QC the transpose to make sure there is one question type per row
+d_2 %>% 
+  select(treatment_bool, alien_question, recycle_question, social_question,
+         time_recycle_control_first_click, time_recycle_treat_first_click,
+         time_control_alien_first_click, time_treat_alien_first_click,
+         time_control_social_first_click, time_treat_social_first_click) %>% 
+  mutate(qc_rec = ifelse(recycle_question == 1 & (
+          (treatment_bool == 0 & time_recycle_control_first_click != "") |
+          (treatment_bool == 1 & time_recycle_treat_first_click != "")), 1, 0),
+         qc_alien = ifelse(alien_question == 1 & (
+          (treatment_bool == 0 & time_control_alien_first_click != "") |
+          (treatment_bool == 1 & time_treat_alien_first_click != "")), 1, 0),
+         qc_soc = ifelse(social_question == 1 & (
+           (treatment_bool == 0 & time_control_social_first_click != "") |
+          (treatment_bool == 1 & time_treat_social_first_click != "")), 1, 0)
+         ) %>% 
+  filter(qc_rec == 0 & qc_alien == 0 & qc_soc == 0) %>% 
+  glimpse()
+# zero rows. successful transform as treat or control for each question.
+
+# ### TODO  -  finish this ###
+# # Remove text for non applicable rows (e.g. Alien info for recycling row)
+# check_col <- function(col){
+#   question_type <- ifelse(col %like% "alien", "alien",
+#                           ifelse(col %like% "recy", "recy", 
+#                                  ifelse(col %like% "social", "social", 
+#                                         "none")))
+#   return(question_type)
+#   }
+# 
+# check_row <- function(row){
+#   question_type <- ifelse(row %like% "alien", "alien",
+#                           ifelse(row %like% "recy", "recy", 
+#                                  ifelse(row %like% "social", "social", 
+#                                         "none")))
+#   return(question_type)
+#   }
+# 
+# cross_check <- function(col, row){
+#   row_question_type <- check_col(col)
+#   col_question_type <- check_row(row)
+#     
+#   row_and_col_check <- ifelse(row_question_type == col_question_type, TRUE, FALSE)  
+#   return(row_and_col_check)
+#   }
+# 
+# d_2_cross_checked <- d_2 %>% 
+#   mutate(time_recycle_control_first_click = ifelse(
+#     cross_check(`time_recycle_control_first_click`, 
+#                 `treatment_question`),
+#     time_recycle_control_first_click,
+#     ""))
+# 
+# # d_3 %>% count(treatment_question, time_recycle_control_first_click)
+# d_2 %>% 
+#   select(treatment_question, treatment_bool,time_recycle_control_first_click, time_recycle_treat_click_count) %>% 
+#   filter(treatment_question %like% "recy") %>% 
+#   mutate(qc = ifelse(treatment_bool == 0 & time_recycle_control_first_click != "", 1, 0)) %>% 
+#   filter(qc > 0) %>% 
+#   glimpse
+# 
+# d_2_cross_checked %>% 
+#   select(treatment_question, time_recycle_control_first_click, time_recycle_treat_click_count) %>% 
+#   filter(treatment_question %like% "recy") %>% 
+#   glimpse
+
+### End TODO section ###
 
 
+d_3 <- d_2
 
-d_3 %>% glimpse()
-
+# check the join 
+d_3 %>% count(response_id, sc0, sc1, sc2, sc3) %>% glimpse() %>% filter(n>1)
+d_3 %>% count(response_id, treatment_question, quiz_perc_correct)
 
 ```
 
@@ -180,32 +258,74 @@ d_3 %>% glimpse()
 
 ```{r regression basic}
 
-
-model_basic <- d_3 %>% 
-  select(response_id, quiz_perc_correct, treatment_question, treatment_bool) %>% 
+dat <- d_3 %>% 
+  select(response_id, quiz_perc_correct, treatment_question, treatment_bool,
+         alien_question, recycle_question, social_question) %>% 
+  mutate(treatment_bool_factor = factor(treatment_bool)) %>% 
   unique() %>% 
-  arrange(response_id) %>% 
-  lm(quiz_perc_correct ~ treatment_bool, data = .)
+  arrange(response_id)
 
-# TODO - QC why the gathers result in two copies of each with different scores
-#          response_id quiz_perc_correct    treatment_question treatment_bool
-# 1: R_0JoNfdq3IWhf0LT               1.0  alien_treatment_bool              1
-# 2: R_0JoNfdq3IWhf0LT               1.0  recyc_treatment_bool              0
-# 3: R_0JoNfdq3IWhf0LT               1.0 social_treatment_bool              1
-# 4: R_0JoNfdq3IWhf0LT               0.5  alien_treatment_bool              1
-# 5: R_0JoNfdq3IWhf0LT               0.5  recyc_treatment_bool              0
-# 6: R_0JoNfdq3IWhf0LT               0.5 social_treatment_bool              1
+# General Stats
+dat %>% 
+  group_by(treatment_bool) %>% 
+  summarise(quiz_avg = mean(quiz_perc_correct),
+            quiz_med = median(quiz_perc_correct))
+
+# Stats by Question Type
+dat %>% 
+  group_by(treatment_bool, treatment_question) %>% 
+  summarise(quiz_avg = mean(quiz_perc_correct),
+            quiz_med = median(quiz_perc_correct))
+
+
+ggplot(dat, aes(x=quiz_perc_correct, fill=treatment_bool_factor)) + 
+  geom_histogram(alpha=0.2, position="identity")
+
+
+model_basic <- dat %>% 
+  lm(quiz_perc_correct ~ treatment_bool, data = .)
 
 
 summary(model_basic)
 
-# TODO - Update treatment_bool as this isn't correct.
+
+# See if there is a difference on the 'for' questions
 model_for_basic <- d_3 %>% 
   select(response_id, quiz_for_correct, treatment_bool) %>% 
   unique() %>% 
   lm(quiz_for_correct ~ treatment_bool, data = .)
 
 summary(model_for_basic)
+
+# See if there is a difference on the 'against' questions
+model_against_basic <- d_3 %>% 
+  select(response_id, quiz_against_correct, treatment_bool) %>% 
+  unique() %>% 
+  lm(quiz_against_correct ~ treatment_bool, data = .)
+
+summary(model_against_basic)
+
+
+# Alien difference
+model_basic_alien <- dat %>% 
+  filter(alien_question == 1) %>% 
+  lm(quiz_perc_correct ~ treatment_bool, data = .)
+
+summary(model_basic_alien)
+
+# Recycle difference
+model_basic_recy <- dat %>% 
+  filter(recycle_question == 1) %>% 
+  lm(quiz_perc_correct ~ treatment_bool, data = .)
+
+summary(model_basic_recy)
+
+# Social Media difference
+model_basic_social <- dat %>% 
+  filter(social_question == 1) %>% 
+  lm(quiz_perc_correct ~ treatment_bool, data = .)
+
+summary(model_basic_social)
 
 ```
 
