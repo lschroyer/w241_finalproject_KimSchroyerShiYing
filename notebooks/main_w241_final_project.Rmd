@@ -93,6 +93,7 @@ d <- d %>% rename(alien_quiz_for_1 = alien_quiz_q1,
                   social_quiz_for_2 = social_quiz_q2, 
                   social_quiz_against_1 = social_quiz_q3, 
                   social_quiz_against_2 = social_quiz_q4)
+  
 
 
 # Calculate what questions (for or against) each participant got right
@@ -252,13 +253,30 @@ d_3 <- d_2
 d_3 %>% count(response_id, sc0, sc1, sc2, sc3) %>% glimpse() %>% filter(n>1)
 d_3 %>% count(response_id, treatment_question, quiz_perc_correct)
 
+
+
+# add a column indicating what type of question they got wrong (numerical vs topical)
+d_4 <- d_3 %>% mutate(alien_quiz_numeric_1 = alien_quiz_for_1_correct,
+         alien_quiz_numeric_2 = alien_quiz_for_2_correct,
+         alien_quiz_category_1 = alien_quiz_against_1_correct, 
+         alien_quiz_category_2 = alien_quiz_against_2_correct,
+         recycle_quiz_numeric_1 = recycle_quiz_against_1_correct,
+         recycle_quiz_numeric_2 = recycle_quiz_against_2_correct,
+         recycle_quiz_category_1 = recycle_quiz_for_1_correct, 
+         recycle_quiz_category_2 = recycle_quiz_for_2_correct,
+         social_quiz_numeric_1 = social_quiz_against_1_correct,
+         social_quiz_category_1 = social_quiz_for_1_correct,
+         social_quiz_category_2 = social_quiz_for_2_correct, 
+         social_quiz_category_3 = social_quiz_against_1_correct)
+
+
 ```
 
 
 
 ```{r regression basic}
 
-dat <- d_3 %>% 
+dat <- d_4 %>% 
   select(response_id, quiz_perc_correct, treatment_question, treatment_bool,
          alien_question, recycle_question, social_question) %>% 
   mutate(treatment_bool_factor = factor(treatment_bool)) %>% 
@@ -330,6 +348,87 @@ summary(model_basic_social)
 ```
 
 ``` {r regression with covariates}
+
+
+```
+
+
+``` {r regression on numerical vs categorical question type}
+# Data Transform
+cat_questions <- c("alien_quiz_category_1", "alien_quiz_category_2",
+         "recycle_quiz_category_1", "recycle_quiz_category_2",
+         "social_quiz_category_1", "social_quiz_category_2", "social_quiz_category_3")
+
+num_questions <- c("alien_quiz_numeric_1", "alien_quiz_numeric_2", 
+         "recycle_quiz_numeric_1", "recycle_quiz_numeric_2",
+         "social_quiz_numeric_1")
+
+
+dat_cat_or_num <- d_4 %>% 
+    select(response_id,
+         cat_questions,
+         ) %>% 
+    gather(key = "cat_or_num_question_topic", 
+           value = "cat_or_num_question_correct", 
+           cat_questions) %>% 
+    unique() %>%
+  bind_rows(
+    d_4 %>% 
+      select(response_id,
+             num_questions,
+             ) %>% 
+      gather(key = "cat_or_num_question_topic", 
+             value = "cat_or_num_question_correct", 
+             num_questions) %>% 
+      unique()
+    ) %>% 
+  unique() %>% 
+  mutate(cat_or_num_question_label = 
+           ifelse(cat_or_num_question_topic %like% "numeric", 
+                  "numeric", "category")
+         ) %>% 
+  arrange(response_id)
+
+
+
+# QC to make sure there are only 12 questions per topic
+dat_cat_or_num %>% filter(response_id == "R_0JoNfdq3IWhf0LT") %>% glimpse()
+stopifnot(nrow(dat_cat_or_num %>% count(response_id) %>% filter(n != 12)) == 0)
+# each question has 12 responses
+
+#QC no participants were dropped
+stopifnot(length(unique(dat_cat_or_num$response_id)) == length(unique(d_4$response_id)))
+# None were dropped
+
+
+# Part 1
+# Check if the question type (Cat or Num) had an effect. Independent of treatment vs control
+model_basic_cat_or_num <- dat_cat_or_num %>% 
+  lm(cat_or_num_question_correct ~ cat_or_num_question_label, data = .)
+
+summary(model_basic_cat_or_num)
+# Yes, people did ~8% worse on average for numerical questions than for categorical questions
+
+# Part 2
+# Check if treatment or control had an effect on the number of correct by question type (Cat or Num)
+dat_cat_or_num_2 <- d_4 %>% 
+  select(response_id, treatment_question, treatment_bool) %>% 
+  unique() 
+
+dat_cat_or_num_2 %>% filter(response_id == "R_0JoNfdq3IWhf0LT") %>% glimpse()
+
+# todo - join the treatment_bool and response id to the cat_or_num df. need to join by question type (e.g. recycle, alien).
+# Check that there are still 12 questions per topic and all we added was whether they were in treatment or not per each topic
+# 
+```
+```{r level of belief change}
+# Must haves:
+  # aliens_belief_change, social_belief_change, recycle_belief_change
+  # social_belief, recycling_belief, alien_belief
+
+# Optionals:
+# alien_interest, recycling_interest, social_media_interest,
+# alien_knowledgem, recycling_knowledge, social_media_knowledg
 
 
 ```
