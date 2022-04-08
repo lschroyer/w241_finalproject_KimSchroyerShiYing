@@ -1,4 +1,5 @@
-## Recode referral names
+## Fisher Kim, Kai Ying, Lucas Schroyer, Peter YH Kim
+# Recode referral names script for call in main script
 
 
 # Recode Berkeley email addresses as MIDS/Berkeley
@@ -15,3 +16,6 @@ d[, referral_person := ifelse(email_1 %like% "berkeley.edu" &
 d[, referral_person := ifelse(email_1 == "ewitt1993@gmail.com",
                               "Lucas or someone affiliated with Lucas",
                               referral_person)]
+
+# Filter out bad entries that we know were not real submits.
+d <- d[response_id != "R_237Pino5qLkCwPc",]

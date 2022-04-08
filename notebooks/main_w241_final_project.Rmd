@@ -14,6 +14,8 @@ This is the markdown script for a final project for the UC Berkeley School of In
 
 ## Configurations and Load Packages
 ```{r global options, include = FALSE}
+rm(list = ls())
+
 setwd("/home/rstudio/w241_finalproject_KimSchroyerShiYing/notebooks")
 
 knitr::opts_chunk$set(include = FALSE, message = FALSE, warning = FALSE )
@@ -57,7 +59,7 @@ library(janitor)
 
 
 ```{r load_data, echo=FALSE}
-d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 5, 2022_08.54.csv')
+d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 8, 2022_15.17.csv')
 
 # Transform Column Names
 d <- janitor::clean_names(d)
@@ -274,9 +276,19 @@ d_4 <- d_3 %>% mutate(alien_quiz_numeric_1 = alien_quiz_for_1_correct,
          social_quiz_category_2 = social_quiz_for_2_correct, 
          social_quiz_category_3 = social_quiz_against_1_correct)
 
+# add in a question_topic variable to join on later
+d_4 <- d_4 %>% 
+  mutate(question_topic = case_when(
+           treatment_question %like% "alien" ~ "alien",
+           treatment_question %like% "recyc" ~ "recycle",
+           treatment_question %like% "social" ~ "social",
+           TRUE ~ "other")
+         ) 
+
 
 ```
 
+# Quiz results by treatment group
 
 
 ```{r regression basic}
@@ -358,6 +370,9 @@ summary(model_basic_social)
 ```
 
 
+# Quiz results by question type
+
+
 ``` {r regression on numerical vs categorical question type}
 # Data Transform
 cat_questions <- c("alien_quiz_category_1", "alien_quiz_category_2",
@@ -370,7 +385,7 @@ num_questions <- c("alien_quiz_numeric_1", "alien_quiz_numeric_2",
 
 
 dat_cat_or_num <- d_4 %>% 
-    select(response_id,
+    select(response_id, question_topic,
          cat_questions,
          ) %>% 
     gather(key = "cat_or_num_question_topic", 
@@ -379,7 +394,7 @@ dat_cat_or_num <- d_4 %>%
     unique() %>%
   bind_rows(
     d_4 %>% 
-      select(response_id,
+      select(response_id, question_topic,
              num_questions,
              ) %>% 
       gather(key = "cat_or_num_question_topic", 
@@ -390,8 +405,15 @@ dat_cat_or_num <- d_4 %>%
   unique() %>% 
   mutate(cat_or_num_question_label = 
            ifelse(cat_or_num_question_topic %like% "numeric", 
-                  "numeric", "category")
-         ) %>% 
+                  "numeric", "category") ,
+         cat_or_num_question_topic = case_when(
+           cat_or_num_question_topic %like% "alien" ~ "alien",
+           cat_or_num_question_topic %like% "recycle" ~ "recycle",
+           cat_or_num_question_topic %like% "social" ~ "social",
+           TRUE ~ "other")
+         ) %>%
+  filter(question_topic == cat_or_num_question_topic) %>% 
+  select(-cat_or_num_question_topic) %>% 
   arrange(response_id)
 
 
@@ -417,15 +439,32 @@ summary(model_basic_cat_or_num)
 # Part 2
 # Check if treatment or control had an effect on the number of correct by question type (Cat or Num)
 dat_cat_or_num_2 <- d_4 %>% 
-  select(response_id, treatment_question, treatment_bool) %>% 
-  unique() 
+  select(response_id, question_topic, treatment_question, treatment_bool) %>% 
+  unique() %>% 
+  full_join(dat_cat_or_num, by = c("response_id","question_topic")
+  )
 
+# QC to make sure there are only 12 questions per topic
 dat_cat_or_num_2 %>% filter(response_id == "R_0JoNfdq3IWhf0LT") %>% glimpse()
+stopifnot(nrow(dat_cat_or_num_2 %>% count(response_id) %>% filter(n != 12)) == 0)
+# each question has 12 responses
 
-# todo - join the treatment_bool and response id to the cat_or_num df. need to join by question type (e.g. recycle, alien).
-# Check that there are still 12 questions per topic and all we added was whether they were in treatment or not per each topic
-# 
+#QC no participants were dropped
+stopifnot(length(unique(dat_cat_or_num_2$response_id)) == length(unique(d_4$response_id)))
+# None were dropped
+
+model_basic_cat_or_num_with_treatment <- dat_cat_or_num_2 %>% 
+  lm(cat_or_num_question_correct ~ treatment_bool + cat_or_num_question_label + treatment_bool*cat_or_num_question_label,
+     data = .)
+
+summary(model_basic_cat_or_num_with_treatment)
+# It does not appear that the treatment impacted whether people did better or worse on the number vs categorical questions
+
 ```
+
+
+# Opinion on the topic before and after treatment
+
 ```{r level of belief change}
 # Must haves:
   # aliens_belief_change, social_belief_change, recycle_belief_change
@@ -435,5 +474,56 @@ dat_cat_or_num_2 %>% filter(response_id == "R_0JoNfdq3IWhf0LT") %>% glimpse()
 # alien_interest, recycling_interest, social_media_interest,
 # alien_knowledgem, recycling_knowledge, social_media_knowledg
 
+dat_change_in_belief <- d_4 %>% 
+  select(response_id, question_topic, treatment_question, treatment_bool,
+         aliens_belief_change, social_belief_change, recycle_belief_change,
+          social_belief, recycling_belief, alien_belief)
 
+source("recode_beliefs.R")
+# returns "dat_change_in_belief_2" object
+
+
+#TODO - think about any filters? e.g. do we want to filter out people who strongly believe in the topic as they can't really go up?
+dat_change_in_belief_2 %>% filter(belief_answer_ohe_pre == 3) %>% count(belief_answer_ohe_post)
+#   belief_answer_ohe_post  n
+# 1                     -1  6
+# 2                      0 40
+# 3                      1 18
+# there are lot's of instances where the narrative made them believe in a topic more strongly even when they answered 4
+
+
+# Part 1
+# Check if the treatment effect had an impact on if someone changes their opinion
+model_basic_change_in_belief <- dat_change_in_belief_2 %>% 
+  lm(belief_answer_ohe_post ~ treatment_bool, data = .)
+
+summary(model_basic_change_in_belief)
+# Yes, statistically significant results
+
+# Part 2
+# Check if the treatment effect had an impact on if someone changes their opinion based on prior belief
+model_basic_change_in_belief_with_prior <- dat_change_in_belief_2 %>%
+  # mutate(belief_answer_ohe_pre = belief_answer_ohe_pre %>% factor()) %>% 
+  lm(belief_answer_ohe_post ~ treatment_bool + belief_answer_ohe_pre + 
+       treatment_bool*belief_answer_ohe_pre, data = .)
+
+summary(model_basic_change_in_belief_with_prior)
+# No statistically significant results. not enough data?
+
+# Part 3
+# Check if the treatment effect had an impact on if someone changes their opinion based on prior belief conditional on the topic
+model_basic_change_in_belief_with_prior_by_topic <- dat_change_in_belief_2 %>% 
+  lm(belief_answer_ohe_post ~ treatment_bool + belief_answer_ohe_pre + question_topic +
+       treatment_bool*belief_answer_ohe_pre + question_topic*belief_answer_ohe_pre + 
+       treatment_bool*belief_answer_ohe_pre*question_topic, data = .)
+
+summary(model_basic_change_in_belief_with_prior_by_topic)
+# No statistically significant results
+
+
+
+stargazer(model_basic_change_in_belief,
+          model_basic_change_in_belief_with_prior, 
+          model_basic_change_in_belief_with_prior_by_topic, 
+          type = "text")
 ```
