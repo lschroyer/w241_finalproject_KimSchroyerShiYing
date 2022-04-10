@@ -27,8 +27,6 @@ knitr::knit_engines$set(problem_description = function(options) {
 ```
 
 ```{r load packages, message = FALSE}
-library(data.table)
-
 if (!require("lmtest")) install.packages("lmtest")
 if (!require("sandwich")) install.packages("sandwich")
 if (!require("patchwork")) install.packages("patchwork")
@@ -36,8 +34,10 @@ if (!require("stargazer")) install.packages("stargazer")
 if (!require("tidyverse")) install.packages("tidyverse")
 if (!require("janitor")) install.packages("janitor")
 if (!require("AER")) install.packages("AER")
+if (!require("lubridate")) install.packages("lubridate")
 
 
+library(data.table)
 library(sandwich)
 library(lmtest)
 
@@ -47,7 +47,7 @@ library(ggplot2)
 library(patchwork)
 
 library(tidyverse)
-
+library(lubridate)
 library(janitor)
 
 
@@ -285,6 +285,7 @@ d_4 <- d_4 %>%
            TRUE ~ "other")
          ) 
 
+d_final_pre_regressions <- d_4
 
 ```
 
@@ -293,7 +294,7 @@ d_4 <- d_4 %>%
 
 ```{r regression basic}
 
-dat <- d_4 %>% 
+dat <- d_final_pre_regressions %>% 
   select(response_id, quiz_perc_correct, treatment_question, treatment_bool,
          alien_question, recycle_question, social_question) %>% 
   mutate(treatment_bool_factor = factor(treatment_bool)) %>% 
@@ -384,7 +385,7 @@ num_questions <- c("alien_quiz_numeric_1", "alien_quiz_numeric_2",
          "social_quiz_numeric_1")
 
 
-dat_cat_or_num <- d_4 %>% 
+dat_cat_or_num <- d_final_pre_regressions %>% 
     select(response_id, question_topic,
          cat_questions,
          ) %>% 
@@ -393,7 +394,7 @@ dat_cat_or_num <- d_4 %>%
            cat_questions) %>% 
     unique() %>%
   bind_rows(
-    d_4 %>% 
+    d_final_pre_regressions %>% 
       select(response_id, question_topic,
              num_questions,
              ) %>% 
@@ -424,7 +425,7 @@ stopifnot(nrow(dat_cat_or_num %>% count(response_id) %>% filter(n != 12)) == 0)
 # each question has 12 responses
 
 #QC no participants were dropped
-stopifnot(length(unique(dat_cat_or_num$response_id)) == length(unique(d_4$response_id)))
+stopifnot(length(unique(dat_cat_or_num$response_id)) == length(unique(d_final_pre_regressions$response_id)))
 # None were dropped
 
 
@@ -438,7 +439,7 @@ summary(model_basic_cat_or_num)
 
 # Part 2
 # Check if treatment or control had an effect on the number of correct by question type (Cat or Num)
-dat_cat_or_num_2 <- d_4 %>% 
+dat_cat_or_num_2 <- d_final_pre_regressions %>% 
   select(response_id, question_topic, treatment_question, treatment_bool) %>% 
   unique() %>% 
   full_join(dat_cat_or_num, by = c("response_id","question_topic")
@@ -450,7 +451,7 @@ stopifnot(nrow(dat_cat_or_num_2 %>% count(response_id) %>% filter(n != 12)) == 0
 # each question has 12 responses
 
 #QC no participants were dropped
-stopifnot(length(unique(dat_cat_or_num_2$response_id)) == length(unique(d_4$response_id)))
+stopifnot(length(unique(dat_cat_or_num_2$response_id)) == length(unique(d_final_pre_regressions$response_id)))
 # None were dropped
 
 model_basic_cat_or_num_with_treatment <- dat_cat_or_num_2 %>% 
@@ -474,7 +475,7 @@ summary(model_basic_cat_or_num_with_treatment)
 # alien_interest, recycling_interest, social_media_interest,
 # alien_knowledgem, recycling_knowledge, social_media_knowledg
 
-dat_change_in_belief <- d_4 %>% 
+dat_change_in_belief <- d_final_pre_regressions %>% 
   select(response_id, question_topic, treatment_question, treatment_bool,
          aliens_belief_change, social_belief_change, recycle_belief_change,
           social_belief, recycling_belief, alien_belief)
@@ -520,10 +521,40 @@ model_basic_change_in_belief_with_prior_by_topic <- dat_change_in_belief_2 %>%
 summary(model_basic_change_in_belief_with_prior_by_topic)
 # No statistically significant results
 
-
-
 stargazer(model_basic_change_in_belief,
           model_basic_change_in_belief_with_prior, 
           model_basic_change_in_belief_with_prior_by_topic, 
           type = "text")
 ```
+```{r time to complete the quiz}
+# Must haves:
+  # start_date, end_date, duration_in_seconds,
+  # time_control_alien_page_submit, time_treat_alien_page_submit, alien_fact_time_page_submit,
+  # time_recycle_treat_page_submit, time_recycle_control_page_submit, time_recy_info_page_submit,
+  # time_treat_social_page_submit, time_control_social_page_submit, time_social_info_page_submit
+
+# TODO - how do we determine the order in which they answered the questions?
+
+dat_time_to_complete <- d_final_pre_regressions %>% 
+  select(response_id, question_topic, treatment_question, treatment_bool,
+          start_date, end_date, duration_in_seconds,
+          time_control_alien_page_submit, time_treat_alien_page_submit, alien_fact_time_page_submit,
+          time_recycle_treat_page_submit, time_recycle_control_page_submit, time_recy_info_page_submit,
+          time_treat_social_page_submit, time_control_social_page_submit, time_social_info_page_submit
+  )
+
+source("recode_time_to_complete.R")
+# returns "dat_time_to_complete_2" object
+
+# Plot the average time for each part
+ggplot(dat_time_to_complete_2, 
+       aes(time_question_page_submit,
+           color = factor(treatment_bool))) + 
+  geom_histogram() + 
+  facet_wrap("question_topic") + 
+  xlab("Time to read narrative")
+
+```
+
+
+
