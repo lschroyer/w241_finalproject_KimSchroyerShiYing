@@ -1,0 +1,148 @@
+---
+title: "W241 Final Project - Main Script"
+author: "Fisher Kim, Kai Ying, Lucas Schroyer, Peter YH Kim"
+date: '2022-04-03'
+output:
+  pdf_document: default
+  word_document: default
+---
+
+## Introduction
+
+This is the markdown script for a final project for the UC Berkeley School of Information - W241.
+
+
+## Configurations and Load Packages
+```{r global options, include = FALSE}
+rm(list = ls())
+
+#setwd("/home/rstudio/w241_finalproject_KimSchroyerShiYing/notebooks")
+
+knitr::opts_chunk$set(include = FALSE, message = FALSE, warning = FALSE )
+
+knitr::knit_engines$set(problem_description = function(options) {
+  code <- paste(options$code, collapse = "\n")
+})
+
+```
+
+```{r load packages, message = FALSE}
+library(data.table)
+
+if (!require("lmtest")) install.packages("lmtest")
+if (!require("sandwich")) install.packages("sandwich")
+if (!require("patchwork")) install.packages("patchwork")
+if (!require("stargazer")) install.packages("stargazer")
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("janitor")) install.packages("janitor")
+if (!require("AER")) install.packages("AER")
+
+
+library(sandwich)
+library(lmtest)
+
+library(AER) 
+
+library(ggplot2) 
+library(patchwork)
+
+library(tidyverse)
+
+library(janitor)
+
+
+```
+## Theory and Background 
+
+
+## Load and Clean Data
+
+
+```{r load_data, echo=FALSE, warning=FALSE}
+d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 8, 2022_15.17.csv')
+
+# Transform Column Names
+d <- janitor::clean_names(d)
+
+# Create Column Dictionary
+d_dict <- d[1:1,]
+d <- d[3:nrow(d),] #if exporting a csv from Qualtrics, use third row. Excel is 2
+
+```
+
+```{r Data Prep, echo=FALSE, warning=FALSE}
+# Convert data to quiz level
+d_by_quiz <- d %>% 
+  # Drop people who opted out
+  filter(nda %like% "Yes") %>%
+  # Create a treatment boolean by topic type
+  mutate(alien_treatment_bool = ifelse(alien_treatment == "", 0, 1),
+         recyc_treatment_bool := ifelse(recycle_treatment == "", 0, 1),
+         social_treatment_bool := ifelse(treatment_social == "", 0, 1)) %>%
+  # Identify score and topic mapping for wide-to-long transformation
+  rename(alien_topic = sc1,
+         recyc_topic = sc2,
+         social_topic = sc3) %>%
+  # Keep treatment/control + demographic covariates
+  select(response_id, gender, gender_3_text, age, ethnicity, education, 
+         education_8_text, number_children, political_affiliation, 
+         alien_interest, recycling_interest,social_media_interest, 
+         alien_treatment_bool, recyc_treatment_bool, 
+         social_treatment_bool, alien_topic, recyc_topic, social_topic) %>%
+  # Wide to long transformation
+  ## Create a topics column for score and treatment mapping
+  gather("topics", "scores", alien_topic:social_topic) %>%
+  # Identify treatment on quiz level basis
+  mutate(treatment = case_when(
+    topics == "alien_topic" & alien_treatment_bool == 1 ~ 1,
+    topics == "recyc_topic" & recyc_treatment_bool == 1 ~ 1,
+    topics == "social_topic" & social_treatment_bool == 1 ~ 1,
+    TRUE ~ 0
+  )) %>%
+  # Convert string variables to factors to prep for regression
+  mutate_if(is.character, as.factor)
+```
+
+```{r Covariate Balance Check, echo=FALSE, warning=FALSE, results=TRUE}
+# Covariate Balance Check
+cov_bal_chk <- lm(
+  treatment ~ ., 
+  d_by_quiz %>% 
+    select(
+      -c(response_id,ends_with("bool"), topics, scores, 
+         gender_3_text, education_8_text)
+    )
+  )
+
+# Check on treatment effect
+## Main Regression
+main_lm <- lm(as.numeric(scores) ~ factor(treatment), d_by_quiz)
+## Main Regression + Covariates
+cov_lm <- lm(
+  as.numeric(scores) ~ factor(treatment) + .-treatment,
+  d_by_quiz %>%
+    select(
+      -c(response_id,ends_with("bool"), topics, 
+         gender_3_text, education_8_text)
+    )
+  )
+
+# Display covariates balance check regression
+stargazer(cov_bal_chk, type="text")
+
+# Illustrate no diff in adding covariates when balance check shows no significance
+stargazer(main_lm, cov_lm, type="text", align = TRUE)
+```
+
+```{r Fixed Effect, echo=FALSE, warning=FALSE, results=TRUE}
+# Main model + Participant Fixed Effect
+fe_lm <- lm(as.numeric(scores) ~ factor(treatment) + response_id, d_by_quiz)
+
+# Adjust SE to clustered SE
+clustered_se <- sqrt(diag(vcovCL(fe_lm, cluster = ~response_id)))
+
+stargazer(main_lm, fe_lm, type="text", 
+          se = list(NULL, clustered_se),
+          omit = "response_id", align = TRUE,
+          add.lines = list(c("Individual Fixed Effects", "No", "Yes")))
+```
