@@ -296,7 +296,8 @@ d_final_pre_regressions <- d_4
 
 dat <- d_final_pre_regressions %>% 
   select(response_id, quiz_perc_correct, treatment_question, treatment_bool,
-         alien_question, recycle_question, social_question) %>% 
+         alien_question, recycle_question, social_question, 
+         question_topic) %>% 
   mutate(treatment_bool_factor = factor(treatment_bool)) %>% 
   unique() %>% 
   arrange(response_id)
@@ -313,14 +314,30 @@ dat %>%
   summarise(quiz_avg = mean(quiz_perc_correct),
             quiz_med = median(quiz_perc_correct))
 
+ggplot(dat,
+       aes(x=quiz_perc_correct,
+           y = (..count..)/sum(..count..),
+           fill=treatment_bool_factor)) + 
+  geom_histogram(alpha=0.2, position="identity") + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
+  xlab("Percentage of Correct Answer on the Quiz") +
+  ylab("Percentage of Responses")
 
-ggplot(dat, aes(x=quiz_perc_correct, fill=treatment_bool_factor)) + 
-  geom_histogram(alpha=0.2, position="identity")
+
+ggplot(dat,
+       aes(x=quiz_perc_correct,
+           y = (..count..)/sum(..count..),
+           fill=treatment_bool_factor)) + 
+  geom_histogram(alpha=0.2, position="identity") +
+  facet_wrap("question_topic") + 
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
+  xlab("Percentage of Correct Answer on the Quiz") +
+  ylab("Percentage of Responses")
+
 
 
 model_basic <- dat %>% 
   lm(quiz_perc_correct ~ treatment_bool, data = .)
-
 
 summary(model_basic)
 
@@ -546,13 +563,82 @@ dat_time_to_complete <- d_final_pre_regressions %>%
 source("recode_time_to_complete.R")
 # returns "dat_time_to_complete_2" object
 
+
+# Join with quiz data
+dat_time_to_complete_with_quiz_scores  <- d_final_pre_regressions %>% 
+  select(response_id, treatment_question,quiz_perc_correct, treatment_question, 
+         treatment_question, treatment_bool,
+         alien_question, recycle_question, social_question) %>% 
+  mutate(treatment_bool_factor = factor(treatment_bool),
+         question_topic = case_when(
+          treatment_question %like% "alien" ~ "alien",
+          treatment_question %like% "recyc" ~ "recycle",
+          treatment_question %like% "social" ~ "social",
+    TRUE ~ "other")) %>% 
+  select(-treatment_question) %>% 
+  unique() %>% 
+  arrange(response_id) %>% 
+  left_join(dat_time_to_complete_2, by = c("response_id", "question_topic", "treatment_bool"))
+
+#TODO - QC join
+stopifnot(d_final_pre_regressions %>% nrow() == dat_time_to_complete_with_quiz_scores %>% nrow())
+
 # Plot the average time for each part
 ggplot(dat_time_to_complete_2, 
-       aes(time_question_page_submit,
+       aes(x = time_question_page_submit,
+           y = (..count..)/sum(..count..),
            color = factor(treatment_bool))) + 
-  geom_histogram() + 
   facet_wrap("question_topic") + 
-  xlab("Time to read narrative")
+  geom_histogram(bins = 60) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
+  xlab("Log Transform of Time to read narrative (sec)") + 
+  ylab("Percentage of Responses") +
+  scale_x_log10(breaks = scales::log_breaks()) 
+  # scale_x_continuous() 
+
+
+# Part 1 
+# Check if time had an impact on quiz score by topic narrative page
+model_basic_time_per_topic_narrative <- dat_time_to_complete_with_quiz_scores %>% 
+  lm(quiz_perc_correct ~ quantile_rank_time_question_page_submit, data = .)
+
+
+summary(model_basic_time_per_topic_narrative)
+
+dat_time_to_complete_with_quiz_scores %>%
+  ggplot(aes(x=quantile_rank_time_question_page_submit,y=quiz_perc_correct)) +
+  geom_point(alpha=0.25) +
+  geom_smooth(method = "lm", 
+              mapping = aes(x=quantile_rank_time_question_page_submit,y=quiz_perc_correct)) 
+
+# Yes, statistically significant results
+
+# Part 2 - By topic fact page
+model_basic_time_per_topic_facts <- dat_time_to_complete_with_quiz_scores %>%
+  lm(quiz_perc_correct ~ quantile_rank_time_fact_page_submit, data = .)
+
+summary(model_basic_time_per_topic_facts)
+
+# Part 3 - By topic narrative and fact page
+model_basic_time_per_topic <- dat_time_to_complete_with_quiz_scores %>%
+  mutate(total_time = quantile_rank_time_question_page_submit + 
+       quantile_rank_time_fact_page_submit) %>% 
+  lm(quiz_perc_correct ~ total_time, data = .)
+  # lm(quiz_perc_correct ~ quantile_rank_time_question_page_submit + 
+  #      quantile_rank_time_fact_page_submit , data = .)
+
+summary(model_basic_time_per_topic)
+
+
+# Part 4  total time and treatment
+model_basic_time_per_topic_with_treatment <- dat_time_to_complete_with_quiz_scores %>%
+  mutate(total_time = quantile_rank_time_question_page_submit + 
+       quantile_rank_time_fact_page_submit) %>% 
+  lm(quiz_perc_correct ~ treatment_bool + total_time + treatment_bool*total_time,
+     data = .)
+
+summary(model_basic_time_per_topic_with_treatment)
+# treatment was insignficant
 
 ```
 
