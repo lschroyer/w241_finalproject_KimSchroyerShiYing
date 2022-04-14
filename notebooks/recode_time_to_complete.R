@@ -30,7 +30,7 @@ dat_time_to_complete_2 <- dat_time_to_complete %>%
          time_question_page_submit = as.double(time_question_page_submit),
          time_fact_page_submit = as.double(time_fact_page_submit))
 
-#calcualte the decile score
+#calculate the decile score
 dat_time_to_complete_2 <- dat_time_to_complete_2 %>% 
    group_by(question_topic, treatment_bool) %>% 
    mutate(

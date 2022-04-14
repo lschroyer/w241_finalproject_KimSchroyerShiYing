@@ -92,7 +92,7 @@ stopifnot(nrow(dat_change_in_belief_2 %>% count(response_id) %>% filter(n != 3))
 # each participant has 3 responses
 
 #QC no participants were dropped
-stopifnot(length(unique(dat_change_in_belief_2$response_id)) == length(unique(d_4$response_id)))
+stopifnot(length(unique(dat_change_in_belief_2$response_id)) == length(unique(d_final_pre_regressions$response_id)))
 # None were dropped
 
 

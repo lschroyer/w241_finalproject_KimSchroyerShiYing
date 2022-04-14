@@ -49,6 +49,7 @@ library(patchwork)
 library(tidyverse)
 library(lubridate)
 library(janitor)
+library(stargazer)
 
 
 ```
@@ -74,7 +75,6 @@ d <- d %>% filter(nda %like% "Yes")
 # Get results from working directory
 source("recode_referral_person.R")
 
-# referral counts
 d %>% count(referral_person) 
 
 # Drop unnecessary columns
@@ -174,8 +174,8 @@ d_2 <- d %>%
          sc2 = as.numeric(sc2),
          sc3 = as.numeric(sc3)) %>% 
   mutate(sc1 = if_else(`treatment_question` == "alien_treatment_bool", `sc1`, 0),
-         sc2 = if_else(`treatment_question` == "recyc_treatment_bool", `sc2`, 0),
-         sc3 = if_else(`treatment_question` == "social_treatment_bool", `sc3`, 0),
+         sc3 = if_else(`treatment_question` == "recyc_treatment_bool", `sc3`, 0),
+         sc2 = if_else(`treatment_question` == "social_treatment_bool", `sc2`, 0),
          quiz_correct_num = sc1 + sc2 + sc3,
          quiz_perc_correct = as.double(quiz_correct_num)/4) %>% 
   left_join(d_graded_2, by = "response_id") %>% 
@@ -287,6 +287,13 @@ d_4 <- d_4 %>%
 
 d_final_pre_regressions <- d_4
 
+d %>%
+filter(response_id == "R_0JoNfdq3IWhf0LT") %>% glimpse()
+
+# # R_2EgHjDJY1ATX3Zd
+d_final_pre_regressions %>%
+filter(response_id == "R_0JoNfdq3IWhf0LT") %>% glimpse()
+
 ```
 
 # Quiz results by treatment group
@@ -320,7 +327,7 @@ ggplot(dat,
            fill=treatment_bool_factor)) + 
   geom_histogram(alpha=0.2, position="identity") + 
   scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
-  xlab("Percentage of Correct Answer on the Quiz") +
+  xlab("Percentage of Correct Answers on the Quiz") +
   ylab("Percentage of Responses")
 
 
@@ -331,7 +338,7 @@ ggplot(dat,
   geom_histogram(alpha=0.2, position="identity") +
   facet_wrap("question_topic") + 
   scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
-  xlab("Percentage of Correct Answer on the Quiz") +
+  xlab("Percentage of Correct Answers on the Quiz") +
   ylab("Percentage of Responses")
 
 
@@ -342,8 +349,28 @@ model_basic <- dat %>%
 summary(model_basic)
 
 
+# TODO - QC This
+model_basic_topic <- dat %>% 
+  lm(quiz_perc_correct ~ treatment_bool + question_topic, data = .)
+
+summary(model_basic_topic)
+
+
+# For and Against Avgs
+d_final_pre_regressions %>% 
+  select(response_id, quiz_for_correct, quiz_against_correct, treatment_bool) %>% 
+  unique() %>% 
+  summarise(for_avg = mean(quiz_for_correct),
+            against_avg = mean(quiz_against_correct))
+
+# d_final_pre_regressions %>% 
+#   select(response_id, quiz_for_correct, quiz_against_correct, treatment_bool) %>% 
+#   unique() %>% 
+#   t.test(`quiz_for_correct` , `quiz_against_correct`, data = .)
+
+
 # See if there is a difference on the 'for' questions
-model_for_basic <- d_3 %>% 
+model_for_basic <- d_final_pre_regressions %>% 
   select(response_id, quiz_for_correct, treatment_bool) %>% 
   unique() %>% 
   lm(quiz_for_correct ~ treatment_bool, data = .)
@@ -351,7 +378,7 @@ model_for_basic <- d_3 %>%
 summary(model_for_basic)
 
 # See if there is a difference on the 'against' questions
-model_against_basic <- d_3 %>% 
+model_against_basic <- d_final_pre_regressions %>% 
   select(response_id, quiz_against_correct, treatment_bool) %>% 
   unique() %>% 
   lm(quiz_against_correct ~ treatment_bool, data = .)
@@ -368,7 +395,9 @@ summary(model_basic_alien)
 
 # Recycle difference
 model_basic_recy <- dat %>% 
+  select(response_id, recycle_question, treatment_bool, quiz_perc_correct) %>% 
   filter(recycle_question == 1) %>% 
+  unique() %>% 
   lm(quiz_perc_correct ~ treatment_bool, data = .)
 
 summary(model_basic_recy)
@@ -379,6 +408,42 @@ model_basic_social <- dat %>%
   lm(quiz_perc_correct ~ treatment_bool, data = .)
 
 summary(model_basic_social)
+
+
+# Clustered Standard Errors and Stargazer Chart
+model_basic$clustered_se <- sqrt(diag(vcovCL(model_basic, 
+                                             cluster = ~response_id)))
+
+model_basic_topic$clustered_se <- sqrt(diag(vcovCL(model_basic_topic, 
+                                             cluster = ~response_id)))
+
+
+model_basic_alien$clustered_se <- sqrt(diag(vcovCL(model_basic_alien, 
+                                             cluster = ~response_id)))
+
+model_basic_recy$clustered_se <- sqrt(diag(vcovCL(model_basic_recy, 
+                                             cluster = ~response_id)))
+
+model_basic_social$clustered_se <- sqrt(diag(vcovCL(model_basic_social, 
+                                             cluster = ~response_id)))
+
+stargazer(model_basic,
+          model_basic_alien, 
+          model_basic_recy,
+          model_basic_social,
+          dep.var.labels=c("Model Type"),
+          column.labels=c("all","alien","recycle","social media"),
+          title="Regression Results with Clustered SE on `Response ID`",
+          type="text", 
+          se = list(model_basic$clustered_se,
+                    model_basic_alien$clustered_se,
+                    model_basic_recy$clustered_se,
+                    model_basic_social$clustered_se),
+          omit = "response_id", align = TRUE)
+# ,
+#           add.lines = list(c("Individual Fixed Effects", "No", "Yes")))
+
+
 
 ```
 
@@ -471,12 +536,42 @@ stopifnot(nrow(dat_cat_or_num_2 %>% count(response_id) %>% filter(n != 12)) == 0
 stopifnot(length(unique(dat_cat_or_num_2$response_id)) == length(unique(d_final_pre_regressions$response_id)))
 # None were dropped
 
-model_basic_cat_or_num_with_treatment <- dat_cat_or_num_2 %>% 
+model_cat_or_num_with_treatment <- dat_cat_or_num_2 %>% 
   lm(cat_or_num_question_correct ~ treatment_bool + cat_or_num_question_label + treatment_bool*cat_or_num_question_label,
      data = .)
 
-summary(model_basic_cat_or_num_with_treatment)
+summary(model_cat_or_num_with_treatment)
 # It does not appear that the treatment impacted whether people did better or worse on the number vs categorical questions
+
+
+# Part 3 - Question Type and Question Topic
+model_cat_or_num_with_question_type <- dat_cat_or_num_2 %>% 
+     lm(cat_or_num_question_correct ~ cat_or_num_question_label + question_topic*cat_or_num_question_label,
+        data = .)
+
+model_cat_or_num_with_question_type %>% summary()
+# num vs cat for aliens is significant
+
+# Clustered Standard Errors and Stargazer Chart
+model_basic_cat_or_num$clustered_se <- sqrt(diag(vcovCL(model_basic_cat_or_num, 
+                                                        cluster = ~response_id)))
+
+model_cat_or_num_with_treatment$clustered_se <- sqrt(diag(vcovCL(model_cat_or_num_with_treatment, 
+                                                        cluster = ~response_id)))
+
+model_cat_or_num_with_question_type$clustered_se <- sqrt(diag(vcovCL(model_cat_or_num_with_question_type, 
+                                                        cluster = ~response_id)))
+
+stargazer(model_basic_cat_or_num,
+          model_cat_or_num_with_treatment, 
+          model_cat_or_num_with_question_type,
+          type="text", 
+          se = list(model_basic_cat_or_num$clustered_se,
+                    model_cat_or_num_with_treatment$clustered_se,
+                    model_cat_or_num_with_question_type$clustered_se),
+          omit = "response_id", align = TRUE)
+# ,
+#           add.lines = list(c("Individual Fixed Effects", "No", "Yes")))
 
 ```
 
@@ -538,11 +633,161 @@ model_basic_change_in_belief_with_prior_by_topic <- dat_change_in_belief_2 %>%
 summary(model_basic_change_in_belief_with_prior_by_topic)
 # No statistically significant results
 
+
+# Clustered Standard Errors and Stargazer Chart
+model_basic_change_in_belief$clustered_se <- sqrt(diag(vcovCL(model_basic_change_in_belief, 
+                                                        cluster = ~response_id)))
+
+model_basic_change_in_belief_with_prior$clustered_se <- sqrt(diag(vcovCL(model_basic_change_in_belief_with_prior, cluster = ~response_id)))
+
+model_basic_change_in_belief_with_prior_by_topic$clustered_se <- sqrt(diag(vcovCL(model_basic_change_in_belief_with_prior_by_topic, cluster = ~response_id)))
+
 stargazer(model_basic_change_in_belief,
           model_basic_change_in_belief_with_prior, 
           model_basic_change_in_belief_with_prior_by_topic, 
-          type = "text")
+          type = "text",
+          dep.var.labels=c("Change In Belief About Topic - Post Treatment (-1 to 1 scale)"),
+          column.labels=c("No covariates","With Prior Belief","With Prior Belief & Topic"),
+          covariate.labels=c("Treatment","Belief in Topic - Pre", "Recycle Topic", "Social Media Topic", 
+                             "Belief in Topic - Pre:Treatment", "Belief in Topic - Pre:Recycle Topic",
+                             "Belief in Topic - Pre:Social Media Topic", "Treatment:Recycle Topic", 
+                             "Treatment:Social Media Topic", "Treatment:Belief in Topic - Pre:Recycle Topic",
+                             "Treatment:Belief in Topic - Pre:Social Media Topic"),
+          title="Regression Results with Clustered SE on `Response ID`",
+          se = list(model_basic_change_in_belief$clustered_se,
+                    model_basic_change_in_belief_with_prior$clustered_se,
+                    model_basic_change_in_belief_with_prior_by_topic$clustered_se),
+          omit = "response_id", align = TRUE)
 ```
+```{r quiz score on interest level}
+
+#simple regression of quiz score on interest level
+dat_knowledge_interest <- d_final_pre_regressions %>% 
+  select(response_id, question_topic, treatment_bool,
+         quiz_perc_correct, quiz_for_correct, quiz_against_correct,
+         alien_interest, recycling_interest, social_media_interest,
+         alien_knowledge, recycling_knowledge, social_media_knowledg)
+
+source("recode_interest.R")
+
+#overall interest
+model_interest <- dat_interest %>% 
+  lm(quiz_perc_correct ~ interest_answer_ohe, data = .)
+summary(model_interest)
+# significant: 0.03296 (SE: 0.01293) 
+
+model_interest_by_topic <- dat_interest %>% 
+  lm(quiz_perc_correct ~ interest_answer_ohe + question_topic, data = .)
+summary(model_interest_by_topic)
+
+# alien interest
+model_interest_alien <- dat_interest %>% 
+  filter(question_topic == "alien") %>% 
+  lm(quiz_perc_correct ~ interest_answer_ohe, data = .)
+
+summary(model_interest_alien)
+# not significant: 0.02310 (0.01961)
+
+# recycle interest
+model_interest_recyc <- dat_interest %>% 
+  filter(question_topic == "recycle") %>% 
+  lm(quiz_perc_correct ~ interest_answer_ohe, data = .)
+
+summary(model_interest_recyc)
+# not significant: 0.02526 (0.02083)
+
+# social interest
+model_interest_social <- dat_interest %>% 
+  filter(question_topic == "social") %>% 
+  lm(quiz_perc_correct ~ interest_answer_ohe, data = .)
+
+summary(model_interest_social)
+# not significant: 0.005668 (0.023177)
+
+# Clustered Standard Errors and Stargazer Chart
+model_interest$clustered_se <- sqrt(diag(vcovCL(model_interest, 
+                                                cluster = ~response_id)))
+
+model_interest_by_topic$clustered_se <- sqrt(diag(vcovCL(model_interest_by_topic, 
+                                                cluster = ~response_id)))
+
+
+stargazer(model_interest,
+          model_interest_by_topic,
+          type = "text",
+          se = list(model_interest$clustered_se,
+                    model_interest_by_topic$clustered_se),
+          omit = "response_id", align = TRUE)
+
+```
+
+
+
+```{r r quiz score on knowledge level}
+#simple regression of quiz score on knowledge level
+dat_knowledge_interest <- d_final_pre_regressions %>% 
+  select(response_id, question_topic, treatment_bool,
+         quiz_perc_correct, quiz_for_correct, quiz_against_correct,
+         alien_interest, recycling_interest, social_media_interest,
+         alien_knowledge, recycling_knowledge, social_media_knowledg)
+
+source("recode_knowledge.R")
+
+#overall knowledge
+model_knowledge <- dat_knowledge %>% 
+  lm(quiz_perc_correct ~ knowledge_answer_ohe, data = .)
+summary(model_knowledge)
+# Not significant: 0.01607 (SE: 0.01346) 
+
+#with topic covariate
+model_knowledge_topic <- dat_knowledge %>% 
+  lm(quiz_perc_correct ~ knowledge_answer_ohe + question_topic, data = .)
+summary(model_knowledge_topic)
+# recycle and social are significant
+
+# alien interest
+model_knowledge_alien <- dat_knowledge %>% 
+  filter(question_topic == "alien") %>% 
+  lm(quiz_perc_correct ~ knowledge_answer_ohe, data = .)
+
+summary(model_knowledge_alien)
+# Not significant: 0.0004924 (0.0221821)
+
+# recycle interest
+model_knowledge_recyc <- dat_knowledge %>% 
+  filter(question_topic == "recycle") %>% 
+  lm(quiz_perc_correct ~ knowledge_answer_ohe, data = .)
+
+summary(model_knowledge_recyc)
+# not significant: 0.005583 (0.022169)
+
+# social interest
+model_knowledge_social <- dat_knowledge %>% 
+  filter(question_topic == "social") %>%
+  lm(quiz_perc_correct ~ knowledge_answer_ohe, data = .)
+
+summary(model_knowledge_social)
+# significant: -0.06491 (0.02593)
+
+# Clustered Standard Errors and Stargazer Chart
+model_knowledge$clustered_se <- sqrt(diag(vcovCL(model_knowledge, 
+                                                cluster = ~response_id)))
+model_knowledge_topic$clustered_se <- sqrt(diag(vcovCL(model_knowledge_topic, 
+                                                cluster = ~response_id)))
+
+stargazer(model_knowledge,
+          model_knowledge_topic,
+          # dep.var.labels=c("Model Type"),
+          # column.labels=c("all","social media only"),
+          title="Regression Results with Clustered SE on `Response ID`",
+          type = "text",
+          se = list(model_knowledge$clustered_se,model_knowledge_topic$clustered_se),
+          omit = "response_id", align = TRUE)
+
+```
+
+
+
 ```{r time to complete the quiz}
 # Must haves:
   # start_date, end_date, duration_in_seconds,
@@ -572,13 +817,15 @@ dat_time_to_complete_with_quiz_scores  <- d_final_pre_regressions %>%
   mutate(treatment_bool_factor = factor(treatment_bool),
          question_topic = case_when(
           treatment_question %like% "alien" ~ "alien",
-          treatment_question %like% "recyc" ~ "recycle",
+          treatment_question %like% "recyc" ~ "recycle", 
           treatment_question %like% "social" ~ "social",
     TRUE ~ "other")) %>% 
   select(-treatment_question) %>% 
   unique() %>% 
   arrange(response_id) %>% 
-  left_join(dat_time_to_complete_2, by = c("response_id", "question_topic", "treatment_bool"))
+  left_join(dat_time_to_complete_2, by = c("response_id", "question_topic", "treatment_bool")) %>% 
+  rename(decile_rank_time_information_page = quantile_rank_time_question_page_submit,
+         decile_rank_time_fact_tables = quantile_rank_time_fact_page_submit)
 
 #TODO - QC join
 stopifnot(d_final_pre_regressions %>% nrow() == dat_time_to_complete_with_quiz_scores %>% nrow())
@@ -600,45 +847,95 @@ ggplot(dat_time_to_complete_2,
 # Part 1 
 # Check if time had an impact on quiz score by topic narrative page
 model_basic_time_per_topic_narrative <- dat_time_to_complete_with_quiz_scores %>% 
-  lm(quiz_perc_correct ~ quantile_rank_time_question_page_submit, data = .)
+  lm(quiz_perc_correct ~ decile_rank_time_information_page, data = .)
 
 
 summary(model_basic_time_per_topic_narrative)
 
 dat_time_to_complete_with_quiz_scores %>%
-  ggplot(aes(x=quantile_rank_time_question_page_submit,y=quiz_perc_correct)) +
+  ggplot(aes(x=decile_rank_time_information_page,y=quiz_perc_correct)) +
   geom_point(alpha=0.25) +
   geom_smooth(method = "lm", 
-              mapping = aes(x=quantile_rank_time_question_page_submit,y=quiz_perc_correct)) 
+              mapping = aes(x=decile_rank_time_information_page,y=quiz_perc_correct)) 
+
+dat_time_to_complete_with_quiz_scores %>%
+  ggplot(aes(x=factor(decile_rank_time_information_page),y=quiz_perc_correct)) +
+  geom_boxplot(outlier.size = 1.5) + 
+  geom_smooth(method = "lm", 
+              mapping = aes(x=decile_rank_time_information_page,y=quiz_perc_correct)) 
+
+  
 
 # Yes, statistically significant results
 
 # Part 2 - By topic fact page
 model_basic_time_per_topic_facts <- dat_time_to_complete_with_quiz_scores %>%
-  lm(quiz_perc_correct ~ quantile_rank_time_fact_page_submit, data = .)
+  lm(quiz_perc_correct ~ decile_rank_time_fact_tables, data = .)
 
 summary(model_basic_time_per_topic_facts)
 
 # Part 3 - By topic narrative and fact page
 model_basic_time_per_topic <- dat_time_to_complete_with_quiz_scores %>%
-  mutate(total_time = quantile_rank_time_question_page_submit + 
-       quantile_rank_time_fact_page_submit) %>% 
-  lm(quiz_perc_correct ~ total_time, data = .)
-  # lm(quiz_perc_correct ~ quantile_rank_time_question_page_submit + 
-  #      quantile_rank_time_fact_page_submit , data = .)
+  mutate(decile_rank_total_time = decile_rank_time_information_page + 
+       decile_rank_time_fact_tables) %>% 
+  lm(quiz_perc_correct ~ decile_rank_total_time, data = .)
+  # lm(quiz_perc_correct ~ decile_rank_time_information_page + 
+  #      decile_rank_time_fact_tables , data = .)
 
 summary(model_basic_time_per_topic)
 
 
-# Part 4  total time and treatment
+# Part 4 - total time and treatment
 model_basic_time_per_topic_with_treatment <- dat_time_to_complete_with_quiz_scores %>%
-  mutate(total_time = quantile_rank_time_question_page_submit + 
-       quantile_rank_time_fact_page_submit) %>% 
+  mutate(total_time = decile_rank_time_information_page + 
+       decile_rank_time_fact_tables) %>% 
   lm(quiz_perc_correct ~ treatment_bool + total_time + treatment_bool*total_time,
      data = .)
 
 summary(model_basic_time_per_topic_with_treatment)
-# treatment was insignficant
+
+dat_time_to_complete_with_quiz_scores %>%
+  lm(quiz_perc_correct ~ treatment_bool + decile_rank_time_information_page + 
+       treatment_bool*decile_rank_time_information_page,
+     data = .) %>% summary()
+
+dat_time_to_complete_with_quiz_scores %>%
+  lm(quiz_perc_correct ~ treatment_bool + decile_rank_time_fact_tables + 
+       treatment_bool*decile_rank_time_fact_tables,
+     data = .) %>% summary()
+
+# Treatment effect was insignificant regardless of time spent
+
+# Part 5 - total time and treatment by topic
+model_basic_time_per_topic_with_treatment_by_question <- dat_time_to_complete_with_quiz_scores %>%
+  mutate(total_time = decile_rank_time_information_page + 
+       decile_rank_time_fact_tables) %>% 
+  lm(quiz_perc_correct ~ treatment_bool + total_time + question_topic + 
+       treatment_bool*total_time*question_topic,
+     data = .)
+
+summary(model_basic_time_per_topic_with_treatment_by_question)
+
+
+# Clustered SE
+model_basic_time_per_topic_narrative$clustered_se <- sqrt(diag(vcovCL(model_basic_time_per_topic_narrative, 
+                                                cluster = ~response_id)))
+model_basic_time_per_topic_facts$clustered_se <- sqrt(diag(vcovCL(model_basic_time_per_topic_facts, 
+                                                cluster = ~response_id)))
+model_basic_time_per_topic$clustered_se <- sqrt(diag(vcovCL(model_basic_time_per_topic, 
+                                                            cluster = ~response_id)))
+
+stargazer(model_basic_time_per_topic_narrative,
+          model_basic_time_per_topic_facts,
+          model_basic_time_per_topic,
+          # dep.var.labels=c("Model Type"),
+          # column.labels=c("all","social media only"),
+          title="Regression Results with Clustered SE on `Response ID`",
+          type = "text",
+          se = list(model_basic_time_per_topic_narrative$clustered_se,
+                    model_basic_time_per_topic_facts$clustered_se,
+                    model_basic_time_per_topic$clustered_se),
+          omit = "response_id", align = TRUE)
 
 ```
 
