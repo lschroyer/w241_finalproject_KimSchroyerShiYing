@@ -60,7 +60,7 @@ library(stargazer)
 
 
 ```{r load_data, echo=FALSE}
-d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 8, 2022_15.17.csv')
+d <- fread('../src/data/W241 Survey StoryTelling Experiment_April 17, 2022_16.35.csv')
 
 # Transform Column Names
 d <- janitor::clean_names(d)
@@ -321,20 +321,24 @@ dat %>%
   summarise(quiz_avg = mean(quiz_perc_correct),
             quiz_med = median(quiz_perc_correct))
 
-ggplot(dat,
+dat %>% 
+  group_by(treatment_bool, treatment_question) %>% 
+  tally()
+
+ggplot(dat %>% rename(`Treatment Group` = treatment_bool_factor),
        aes(x=quiz_perc_correct,
            y = (..count..)/sum(..count..),
-           fill=treatment_bool_factor)) + 
+           fill=`Treatment Group`)) + 
   geom_histogram(alpha=0.2, position="identity") + 
   scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
   xlab("Percentage of Correct Answers on the Quiz") +
   ylab("Percentage of Responses")
 
 
-ggplot(dat,
+ggplot(dat %>% rename(`Treatment Group` = treatment_bool_factor),
        aes(x=quiz_perc_correct,
            y = (..count..)/sum(..count..),
-           fill=treatment_bool_factor)) + 
+           fill=`Treatment Group`)) + 
   geom_histogram(alpha=0.2, position="identity") +
   facet_wrap("question_topic") + 
   scale_y_continuous(labels = scales::percent_format(accuracy = 1L)) +
@@ -348,25 +352,35 @@ model_basic <- dat %>%
 
 summary(model_basic)
 
-
-# TODO - QC This
+# Treatment by topic
 model_basic_topic <- dat %>% 
   lm(quiz_perc_correct ~ treatment_bool + question_topic, data = .)
 
 summary(model_basic_topic)
 
 
-# For and Against Avgs
-d_final_pre_regressions %>% 
-  select(response_id, quiz_for_correct, quiz_against_correct, treatment_bool) %>% 
-  unique() %>% 
-  summarise(for_avg = mean(quiz_for_correct),
-            against_avg = mean(quiz_against_correct))
+# Treatment by topic 2
+model_basic_topic_2 <- dat %>% 
+  lm(quiz_perc_correct ~ treatment_bool*question_topic, data = .)
 
-# d_final_pre_regressions %>% 
-#   select(response_id, quiz_for_correct, quiz_against_correct, treatment_bool) %>% 
-#   unique() %>% 
-#   t.test(`quiz_for_correct` , `quiz_against_correct`, data = .)
+summary(model_basic_topic_2)
+
+
+
+
+# For and Against Avgs
+quiz_for_correct <- d_final_pre_regressions %>% 
+  select(response_id, quiz_for_correct) %>% 
+  unique() %>% 
+  select(quiz_for_correct)
+
+
+quiz_against_correct <- d_final_pre_regressions %>% 
+  select(response_id, quiz_against_correct) %>% 
+  unique() %>% 
+  select(quiz_against_correct)
+
+t.test(quiz_for_correct, quiz_against_correct)
 
 
 # See if there is a difference on the 'for' questions
@@ -417,6 +431,8 @@ model_basic$clustered_se <- sqrt(diag(vcovCL(model_basic,
 model_basic_topic$clustered_se <- sqrt(diag(vcovCL(model_basic_topic, 
                                              cluster = ~response_id)))
 
+model_basic_topic_2$clustered_se <- sqrt(diag(vcovCL(model_basic_topic_2, 
+                                             cluster = ~response_id)))
 
 model_basic_alien$clustered_se <- sqrt(diag(vcovCL(model_basic_alien, 
                                              cluster = ~response_id)))
@@ -428,26 +444,28 @@ model_basic_social$clustered_se <- sqrt(diag(vcovCL(model_basic_social,
                                              cluster = ~response_id)))
 
 stargazer(model_basic,
-          model_basic_alien, 
-          model_basic_recy,
-          model_basic_social,
+          model_basic_topic,
+          model_basic_topic_2,
+          # model_basic_alien, 
+          # model_basic_recy,
+          # model_basic_social,
           dep.var.labels=c("Model Type"),
-          column.labels=c("all","alien","recycle","social media"),
+          # column.labels=c("Basic","By Topic","alien","recycle","social media"),
+          # column.labels=c("all","all","alien","recycle","social media"),
           title="Regression Results with Clustered SE on `Response ID`",
           type="text", 
           se = list(model_basic$clustered_se,
-                    model_basic_alien$clustered_se,
-                    model_basic_recy$clustered_se,
-                    model_basic_social$clustered_se),
+                    model_basic_topic$clustered_se,
+                    model_basic_topic_2$clustered_se
+                    
+                    # model_basic_alien$clustered_se,
+                    # model_basic_recy$clustered_se,
+                    # model_basic_social$clustered_se
+                    ),
           omit = "response_id", align = TRUE)
 # ,
 #           add.lines = list(c("Individual Fixed Effects", "No", "Yes")))
 
-
-
-```
-
-``` {r regression with covariates}
 
 
 ```
@@ -514,6 +532,7 @@ stopifnot(length(unique(dat_cat_or_num$response_id)) == length(unique(d_final_pr
 # Part 1
 # Check if the question type (Cat or Num) had an effect. Independent of treatment vs control
 model_basic_cat_or_num <- dat_cat_or_num %>% 
+  # filter(question_topic %like% 'soc') %>% 
   lm(cat_or_num_question_correct ~ cat_or_num_question_label, data = .)
 
 summary(model_basic_cat_or_num)
@@ -563,11 +582,11 @@ model_cat_or_num_with_question_type$clustered_se <- sqrt(diag(vcovCL(model_cat_o
                                                         cluster = ~response_id)))
 
 stargazer(model_basic_cat_or_num,
-          model_cat_or_num_with_treatment, 
+          # model_cat_or_num_with_treatment, 
           model_cat_or_num_with_question_type,
           type="text", 
           se = list(model_basic_cat_or_num$clustered_se,
-                    model_cat_or_num_with_treatment$clustered_se,
+                    # model_cat_or_num_with_treatment$clustered_se,
                     model_cat_or_num_with_question_type$clustered_se),
           omit = "response_id", align = TRUE)
 # ,
@@ -616,12 +635,13 @@ summary(model_basic_change_in_belief)
 # Part 2
 # Check if the treatment effect had an impact on if someone changes their opinion based on prior belief
 model_basic_change_in_belief_with_prior <- dat_change_in_belief_2 %>%
-  # mutate(belief_answer_ohe_pre = belief_answer_ohe_pre %>% factor()) %>% 
+  # mutate(belief_answer_ohe_pre = belief_answer_ohe_pre %>% factor()) %>%
   lm(belief_answer_ohe_post ~ treatment_bool + belief_answer_ohe_pre + 
        treatment_bool*belief_answer_ohe_pre, data = .)
 
 summary(model_basic_change_in_belief_with_prior)
 # No statistically significant results. not enough data?
+
 
 # Part 3
 # Check if the treatment effect had an impact on if someone changes their opinion based on prior belief conditional on the topic
@@ -659,6 +679,9 @@ stargazer(model_basic_change_in_belief,
                     model_basic_change_in_belief_with_prior_by_topic$clustered_se),
           omit = "response_id", align = TRUE)
 ```
+
+
+
 ```{r quiz score on interest level}
 
 #simple regression of quiz score on interest level
@@ -733,6 +756,15 @@ dat_knowledge_interest <- d_final_pre_regressions %>%
 
 source("recode_knowledge.R")
 
+dat_knowledge %>% 
+  group_by(question_topic) %>% 
+  mutate(topic_count = n()) %>% 
+  ungroup() %>% 
+  group_by(question_topic, knowledge_answer_ohe) %>% 
+  summarize(perc = n()/topic_count) %>% 
+  ungroup() %>% 
+  unique()
+
 #overall knowledge
 model_knowledge <- dat_knowledge %>% 
   lm(quiz_perc_correct ~ knowledge_answer_ohe, data = .)
@@ -742,6 +774,7 @@ summary(model_knowledge)
 #with topic covariate
 model_knowledge_topic <- dat_knowledge %>% 
   lm(quiz_perc_correct ~ knowledge_answer_ohe + question_topic, data = .)
+
 summary(model_knowledge_topic)
 # recycle and social are significant
 
@@ -830,6 +863,12 @@ dat_time_to_complete_with_quiz_scores  <- d_final_pre_regressions %>%
 #TODO - QC join
 stopifnot(d_final_pre_regressions %>% nrow() == dat_time_to_complete_with_quiz_scores %>% nrow())
 
+# how correlated are the rank time variables
+dat_time_to_complete_with_quiz_scores %>% 
+  mutate(delta_rank_time = abs(decile_rank_time_information_page - decile_rank_time_fact_tables)) %>% 
+  count(delta_rank_time) %>% 
+  mutate(n_perc = n/sum(n)*100)
+
 # Plot the average time for each part
 ggplot(dat_time_to_complete_2, 
        aes(x = time_question_page_submit,
@@ -862,7 +901,10 @@ dat_time_to_complete_with_quiz_scores %>%
   ggplot(aes(x=factor(decile_rank_time_information_page),y=quiz_perc_correct)) +
   geom_boxplot(outlier.size = 1.5) + 
   geom_smooth(method = "lm", 
-              mapping = aes(x=decile_rank_time_information_page,y=quiz_perc_correct)) 
+              mapping = aes(x=decile_rank_time_information_page,y=quiz_perc_correct))  +
+  xlab("Binned Time Spent Reading A Narrative (decile rank)") +
+  ylab("Percentage of Quiz Questions Answered Correctly")
+
 
   
 
@@ -927,17 +969,66 @@ model_basic_time_per_topic$clustered_se <- sqrt(diag(vcovCL(model_basic_time_per
 
 stargazer(model_basic_time_per_topic_narrative,
           model_basic_time_per_topic_facts,
-          model_basic_time_per_topic,
+          # model_basic_time_per_topic,
           # dep.var.labels=c("Model Type"),
           # column.labels=c("all","social media only"),
           title="Regression Results with Clustered SE on `Response ID`",
           type = "text",
           se = list(model_basic_time_per_topic_narrative$clustered_se,
-                    model_basic_time_per_topic_facts$clustered_se,
-                    model_basic_time_per_topic$clustered_se),
+                    model_basic_time_per_topic_facts$clustered_se#,
+                    # model_basic_time_per_topic$clustered_se
+                    ),
           omit = "response_id", align = TRUE)
 
 ```
 
+```{r raffle_winners}
 
+# Total 
+# 50*1 + 20*10 + 5*20 = $350
+# 350 + fees
+
+raffle_winneres <- readRDS(file = "raffle_winners.rds")
+
+# # $50 Winner
+# tier_1_prize <- d_final_pre_regressions[!is.na(email_1) &
+#                                           email_1 != "",
+#                                         sample(email_1, 1)]
+# tier_1_prize
+# # "Andikhosravi@gmail.com"
+# 
+# # $20 Winner
+# tier_2_prizes <- d_final_pre_regressions[!is.na(email_1) 
+#                                          & email_1 != "" & 
+#                                          !(email_1 %in% tier_1_prize),
+#                         sample(email_1, 10)]
+# 
+# tier_2_prizes
+#  # [1] "valkarp@berkeley.edu"       "Kirshtein@gmail.com"        "Tanayndr@gmail.com"         "connormcc@berkeley.edu"    
+#  # [5] "Kirshtein@gmail.com"        "giorgia.willits@gmail.com"  "vincegabrielson@gmail.com"  "bethany.vittetoe@gmail.com"
+#  # [9] "frankie.pun@berkeley.edu"   "aroeder62@gmail.com" 
+# 
+# # $5 Winner
+# tier_3_prizes <- d_final_pre_regressions[!is.na(email_1) 
+#                                          & email_1 != "" & 
+#                                          !(email_1 %in% tier_1_prize) &
+#                                          !(email_1 %in% tier_2_prizes) ,
+#                         sample(email_1, 20)]
+# 
+# tier_3_prizes
+# #  [1] "Jacksonhaley16@gmail.com"    "awasthianshuman96@gmail.com" "Suna.yeltekin@gmail.com"     "rsingh0206@berkeley.edu"    
+# #  [5] "pharvey@berkeley.edu"        "jjfatta@gmail.com"           "Darthstewie69@gmail.com"     "Petertripp75@gmail.com"     
+# #  [9] "robert.turnage@berkeley.edu" "zane.liu@aol.com"            "gailspencer17@gmail.com"     "Arizonakmilotich@gmail.com" 
+# # [13] "aysun@berkeley.edu"          "shane.kramer@berkeley.edu"   "robert.turnage@berkeley.edu" "ckjcheung@berkeley.edu"     
+# # [17] "aysun@berkeley.edu"          "matt354@gmail.com"           "zane.liu@aol.com"            "jpcrom@hotmail.com" 
+# 
+# 
+# raffle_winneres <- data.table(fifty = tier_1_prize,
+#                               twenty = tier_2_prizes,
+#                               five = tier_3_prizes)
+
+# saveRDS(raffle_winneres, file = "raffle_winners.rds")
+
+
+```
 
