@@ -985,15 +985,33 @@ stargazer(model_basic_time_per_topic_narrative,
 ```{r raffle_winners}
 
 # Total 
-# 50*1 + 20*10 + 5*20 = $350
+# 50*1 + 20*10 + 10*20 = $450
 # 350 + fees
 
 raffle_winneres <- readRDS(file = "raffle_winners.rds")
 
+
+raffle_winneres %>% select(twenty) %>% 
+  left_join(d_final_pre_regressions %>% 
+              select(email_1, referral_person) %>% 
+              unique() %>% 
+              rename(twenty = email_1), 
+            by = "twenty")
+
+raffle_winneres %>% select(five) %>% 
+  left_join(d_final_pre_regressions %>% 
+              select(email_1, referral_person) %>% 
+              unique() %>% 
+              rename(five = email_1), 
+            by = "five")
+
+# Replace pharvey with "aba4693@gmail.com" (random selection) as pharvey asked to opt out. 
+
+
 # # $50 Winner
-# tier_1_prize <- d_final_pre_regressions[!is.na(email_1) &
-#                                           email_1 != "",
-#                                         sample(email_1, 1)]
+tier_1_prize <- d_final_pre_regressions[!is.na(email_1) &
+                                          email_1 != "",
+                                        sample(email_1, 1)]
 # tier_1_prize
 # # "Andikhosravi@gmail.com"
 # 
@@ -1006,9 +1024,9 @@ raffle_winneres <- readRDS(file = "raffle_winners.rds")
 # tier_2_prizes
 #  # [1] "valkarp@berkeley.edu"       "Kirshtein@gmail.com"        "Tanayndr@gmail.com"         "connormcc@berkeley.edu"    
 #  # [5] "Kirshtein@gmail.com"        "giorgia.willits@gmail.com"  "vincegabrielson@gmail.com"  "bethany.vittetoe@gmail.com"
-#  # [9] "frankie.pun@berkeley.edu"   "aroeder62@gmail.com" 
+#  # [9] "frankie.pun@berkeley.edu"   "aroeder62@gmail.com" (accidentally sent two to kirshtein... oh well. congrats to them!)
 # 
-# # $5 Winner
+# # $10 Winner
 # tier_3_prizes <- d_final_pre_regressions[!is.na(email_1) 
 #                                          & email_1 != "" & 
 #                                          !(email_1 %in% tier_1_prize) &
@@ -1017,10 +1035,10 @@ raffle_winneres <- readRDS(file = "raffle_winners.rds")
 # 
 # tier_3_prizes
 # #  [1] "Jacksonhaley16@gmail.com"    "awasthianshuman96@gmail.com" "Suna.yeltekin@gmail.com"     "rsingh0206@berkeley.edu"    
-# #  [5] "pharvey@berkeley.edu"        "jjfatta@gmail.com"           "Darthstewie69@gmail.com"     "Petertripp75@gmail.com"     
+# #  [5] "aba4693@gmail.com"        "jjfatta@gmail.com"           "Darthstewie69@gmail.com"     "Petertripp75@gmail.com"     
 # #  [9] "robert.turnage@berkeley.edu" "zane.liu@aol.com"            "gailspencer17@gmail.com"     "Arizonakmilotich@gmail.com" 
-# # [13] "aysun@berkeley.edu"          "shane.kramer@berkeley.edu"   "robert.turnage@berkeley.edu" "ckjcheung@berkeley.edu"     
-# # [17] "aysun@berkeley.edu"          "matt354@gmail.com"           "zane.liu@aol.com"            "jpcrom@hotmail.com" 
+# # [13] "aysun@berkeley.edu"          "shane.kramer@berkeley.edu"   "ckjcheung@berkeley.edu"     "matt354@gmail.com"
+# # [17]  "jpcrom@hotmail.com"        "katyscott@comcast.net"        "trinity.harvey@humboldt.edu"  "zhawtof@gmail.com"
 # 
 # 
 # raffle_winneres <- data.table(fifty = tier_1_prize,
@@ -1029,6 +1047,10 @@ raffle_winneres <- readRDS(file = "raffle_winners.rds")
 
 # saveRDS(raffle_winneres, file = "raffle_winners.rds")
 
+
+# Lucas Schroyer, Fisher Kim, Kai Ying, Peter YH Kim
+
+# Thank you so much for taking our survey and congratulations on winning the $__ raffle! Hope you enjoy this Amazon Gift Card!
 
 ```
 
